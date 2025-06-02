@@ -1,9 +1,5 @@
-# pytest test_worderly.py
-import pytest
 import tempfile
 import os
-import json
-from unittest.mock import patch, mock_open
 from worderly import (
     valid_subword, get_subsets, six_letter_wordlist, pick_valid_main_word,
     make_grid, main_word_diagonal, place_main_subwords, ver_can_be_placed,
@@ -94,15 +90,15 @@ class TestWordValidation:
     def test_valid_subword(self):
         """Test subword validation logic"""
         # Valid subwords
-        assert valid_subword("cat", "catch") is True
-        assert valid_subword("hat", "hatch") is True
-        assert valid_subword("ace", "place") is True
+        assert valid_subword("papa", "papasa") is True
+        assert valid_subword("ha", "hatdog") is True
+        assert valid_subword("abc", "adcb") is True
         
         # Invalid subwords
-        assert valid_subword("catch", "catch") is False  # Same word
-        assert valid_subword("dog", "cat") is False      # No common letters
+        assert valid_subword("test", "test") is False  # Same word
+        assert valid_subword("papasa", "me") is False      # No common letters
         assert valid_subword("aaa", "aa") is False       # More letters than available
-        assert valid_subword("hello", "helo") is False   # Not enough 'l's
+        assert valid_subword("mississippi", "misisipi") is False   # Not enough 's' & 'p'
     
     def test_get_subsets(self):
         """Test getting valid subsets from wordlist"""
