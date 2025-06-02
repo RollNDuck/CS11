@@ -1,11 +1,7 @@
-# python3 worderly.py
 import random
 import os
 from argparse import ArgumentParser
-from worderly_classes import (
-    GameGrid, GameState, GameWord, LevelConfig, GridPosition,
-    Leaderboard, LeaderboardEntry, StreakTracker
-)
+from worderly_classes import GameGrid, GameState, LevelConfig, Leaderboard, StreakTracker
 
 #--------------------------------------------------------------------------------------------#
 # # # GETTING OF MAIN WORD AND SUBWORDS
@@ -50,16 +46,8 @@ def pick_valid_main_word(wordlist):
 
 def display_grid(grid):
     """Display the game grid"""
-    if isinstance(grid, GameGrid):
-        for row in grid.grid:
-            print(' '.join(row))
-    else:
-        # Backward compatibility for list of lists or strings
-        for row in grid:
-            if isinstance(row, str):
-                print(' '.join(row))
-            else:
-                print(' '.join(row))
+    for row in grid:
+        print(' '.join(row))
 
 def make_grid():
     """Create a new game grid"""
@@ -69,38 +57,38 @@ def main_word_diagonal(word, grid, game_state):
     """Place the main word diagonally on the grid"""
     config = LevelConfig()
     
-    positions = []
-    for i, letter in enumerate(word):           
+    positions = [] # Keep track of positions
+    for i, letter in enumerate(word): # Index calculation           
         row_0 = config.center_row + (i * 2)
         col_0 = config.center_col + (i * 2)
         
-        grid.set_cell(row_0, col_0, letter.upper())
-        positions.append((row_0, col_0))
+        grid.set_cell(row_0, col_0, letter.upper()) # Place leter
+        positions.append((row_0, col_0)) # Tracker
     
-    game_state.add_word(word.upper(), positions, is_main_word=True, direction="diagonal")
+    game_state.add_word(word.upper(), positions, is_main_word=True, direction="diagonal") # Tracker
     return grid, game_state
 
 def place_main_subwords(word, subwords, grid, game_state):
     """Place subwords horizontally intersecting with the main word"""
     config = LevelConfig()
     
-    for i, main_letter in enumerate(word):
+    for i, main_letter in enumerate(word): # Index calculation
         row_0 = config.center_row + (i * 2)
         col_0 = config.center_col + (i * 2)
 
         for subword in subwords[:]:
             if main_letter in subword:
                 positions = []
-                for j, letter in enumerate(subword):
-                    loc = subword.index(main_letter)
-                    hor_off = (j - loc)
+                for j, letter in enumerate(subword): # Index offset per letter
+                    loc = subword.index(main_letter) # Index of main letter in subword
+                    hor_off = (j - loc) # Index offset per letter
                     col_1 = col_0 + hor_off
                     
-                    positions.append((row_0, col_1))
+                    positions.append((row_0, col_1)) # Keep track of word and index
 
-                    if hor_off == 0:
+                    if hor_off == 0: # Retain main word
                         grid.set_cell(row_0, col_1, letter.upper())
-                    elif 0 <= row_0 < config.rows and 0 <= col_1 < config.columns:
+                    elif 0 <= row_0 < config.rows and 0 <= col_1 < config.columns: # Set index limits (not off grid)
                         grid.set_cell(row_0, col_1, letter)
 
                 game_state.add_word(subword, positions, direction="horizontal")
@@ -109,162 +97,145 @@ def place_main_subwords(word, subwords, grid, game_state):
 
     return grid, game_state
 
-def ver_can_be_placed(grid, subword, row_0, col_0, loc):
-    """Check if a vertical word can be placed at the given position"""
+def place_vertical_subwords(word, subwords, grid, game_state, vertical_count):
+    """Place vertical subwords that intersect with letters from the main word."""
+    
     config = LevelConfig()
     
-    # Check top boundary
+    # Get the grid positions of each letter in the main word
+    word_positions = game_state.get_word_positions(word)
+    if not word_positions:
+        return grid, game_state, vertical_count
+    
+    # Randomly select a letter from the main word and get its grid coordinates
+    r_int = random.randint(0, len(word) - 1)
+    main_letter = word[r_int]
+    (row_0, col_0) = word_positions[r_int]
+
+    # Try to find a subword that can intersect with the main word at the selected letter
+    for subword in subwords[:]:  # iterate over a shallow copy to allow removal
+        if main_letter in subword:
+            loc = subword.index(main_letter)  # position of shared letter in the subword
+
+            # Check if the subword can be placed vertically with alignment at the shared letter
+            if ver_can_be_placed(grid, subword, row_0, col_0, loc):
+                positions = []  # track all placed letter positions
+
+                for j, letter in enumerate(subword):
+                    ver_off = j - loc
+                    row_1 = row_0 + ver_off  # compute target row
+
+                    # No placement for the shared letter (already exists)
+                    if ver_off == 0:
+                        pass
+                    # Place other letters vertically if within bounds
+                    elif 0 <= row_1 < config.rows:
+                        grid.set_cell(row_1, col_0, letter)
+
+                    # Save the position of each letter placed
+                    positions.append((row_1, col_0))
+
+                # Register the placed subword and its positions in game state
+                game_state.add_word(subword, positions, direction="vertical")
+
+                # Update vertical word count and remove subword to prevent reuse
+                vertical_count += 1
+                subwords.remove(subword)
+                break  # Exit after placing one valid subword
+
+    return grid, game_state, vertical_count
+
+def ver_can_be_placed(grid, subword, row_0, col_0, loc):
+    """Check if a vertical word can be placed at the specified position on the grid."""
+    config = LevelConfig()
+    
+    # Check the cell immediately above the top of the word to avoid adjacency
     top_row = row_0 - loc - 1
     if 0 <= top_row < config.rows:
         if grid.get_cell(top_row, col_0) != '.':
             return False
 
-    # Check bottom boundary
+    # Check the cell immediately below the bottom of the word to avoid adjacency
     bottom_row = row_0 + (len(subword) - loc)
     if 0 <= bottom_row < config.rows:
         if grid.get_cell(bottom_row, col_0) != '.':
             return False
         
-    # Check all positions of the subword
+    # Check each letter position of the subword vertically
     for i, letter in enumerate(subword):
-        offset = i - loc
+        offset = i - loc  # Distance from main letter
         row = row_0 + offset
         col = col_0
 
+        # Verify position is within grid bounds
         if not (0 <= row < config.rows and 0 <= col < config.columns):
             return False
         
+        # Allow placement if cell is empty or already contains the correct letter
         if grid.get_cell(row, col) != '.' and grid.get_cell(row, col) != letter:
             return False
         
+        # For letters other than the main intersection letter,
+        # ensure adjacent cells do not conflict with existing words
         if offset != 0:
             for s in (-1, 0, 1):
+                # Check cells around the top letter of the subword
                 if i == 0:
                     for t in (-1, 0):
                         if row + t >= 0:
                             if 0 <= col + s < config.columns and 0 <= row + t < config.rows:
                                 if grid.get_cell(row + t, col + s) != '.':
                                     return False
+                # Check cells around the bottom letter of the subword
                 elif i == len(subword) - 1:
                     for b in (0, 1):
                         if row + b < config.rows:
                             if 0 <= col + s < config.columns and 0 <= row + b < config.rows:
                                 if grid.get_cell(row + b, col + s) != '.':
                                     return False
+                # Check cells around intermediate letters of the subword
                 else:
                     if 0 <= col + s < config.columns:
                         if grid.get_cell(row, col_0 + s) != '.':
                             return False
     return True
 
-def place_vertical_subwords(word, subwords, grid, game_state, vertical_count):
-    """Place vertical subwords intersecting with existing words"""
-    config = LevelConfig()
-    
-    word_positions = game_state.get_word_positions(word)
-    if not word_positions:
-        return grid, game_state, vertical_count
-    
-    r_int = random.randint(0, len(word) - 1)
-    main_letter = word[r_int]
-    (row_0, col_0) = word_positions[r_int]
-    
-    for subword in subwords[:]:
-        if main_letter in subword:
-            loc = subword.index(main_letter)
-            if ver_can_be_placed(grid, subword, row_0, col_0, loc):
-                
-                positions = []
-                for j, letter in enumerate(subword):
-                    ver_off = j - loc
-                    row_1 = row_0 + ver_off
-
-                    if ver_off == 0:
-                        pass
-                    elif 0 <= row_1 < config.rows:
-                        grid.set_cell(row_1, col_0, letter)
-
-                    positions.append((row_1, col_0))
-
-                game_state.add_word(subword, positions, direction="vertical")
-                vertical_count += 1
-                subwords.remove(subword)
-                break
-            
-    return grid, game_state, vertical_count
-
-def hor_can_be_placed(grid, subword, row_0, col_0, loc):
-    """Check if a horizontal word can be placed at the given position"""
-    config = LevelConfig()
-
-    left_col = col_0 - loc - 1
-    if 0 <= left_col < config.columns:
-        if grid.get_cell(row_0, left_col) != '.':
-            return False
-
-    right_col = col_0 + (len(subword) - loc)
-    if 0 <= right_col < config.columns:
-        if grid.get_cell(row_0, right_col) != '.':
-            return False
-
-    for i, letter in enumerate(subword):
-        offset = i - loc
-        col = col_0 + offset
-        row = row_0
-
-        if not (0 <= row < config.rows and 0 <= col < config.columns):
-            return False
-        
-        if grid.get_cell(row, col) != '.' and grid.get_cell(row, col) != letter:
-            return False
-        
-        if offset != 0:
-            for s in (-1, 0, 1):
-                if i == 0:
-                    for l in (-1, 0):
-                        if 0 <= col + l < config.columns and 0 <= row + s < config.rows:
-                            if grid.get_cell(row + s, col + l) != '.':
-                                return False
-                elif i == len(subword) - 1:
-                    for r in (0, 1):
-                        if 0 <= col + r < config.columns and 0 <= row + s < config.rows:
-                            if grid.get_cell(row + s, col + r) != '.':
-                                return False
-                else:
-                    if 0 <= row + s < config.rows:
-                        if grid.get_cell(row + s, col) != '.':
-                            return False
-    return True
-
 def place_horizontal_subwords(word, subwords, grid, game_state, horizontal_count):
-    """Place horizontal subwords intersecting with existing words"""
+    """Place horizontal subwords that intersect with an existing word on the grid."""
     config = LevelConfig()
     
+    # Get the positions of each letter in the current word from the game state
     word_positions = game_state.get_word_positions(word)
     if not word_positions:
         return grid, game_state, horizontal_count
     
+    # Randomly select a letter and its position from the word
     c_int = random.randint(0, len(word) - 1)
     main_letter = word[c_int]
     (row_0, col_0) = word_positions[c_int]
     
     for subword in subwords[:]:
+        # Check if the main letter is in the subword
         if main_letter in subword:
             loc = subword.index(main_letter)
+            # Check if the subword can be placed horizontally at the position
             if hor_can_be_placed(grid, subword, row_0, col_0, loc):
-
                 positions = []
                 for j, letter in enumerate(subword):
                     hor_off = j - loc
                     col_1 = col_0 + hor_off
 
+                    # Skip the main intersection letter as it is already placed
                     if hor_off == 0:
                         pass
                     elif 0 <= col_1 < config.columns:
+                        # Place letter on the grid
                         grid.set_cell(row_0, col_1, letter)
 
+                    # Track the position of each letter placed
                     positions.append((row_0, col_1))
 
+                # Add the subword to the game state with its letter positions
                 game_state.add_word(subword, positions, direction="horizontal")
                 horizontal_count += 1
                 subwords.remove(subword)
@@ -272,20 +243,74 @@ def place_horizontal_subwords(word, subwords, grid, game_state, horizontal_count
             
     return grid, game_state, horizontal_count
 
+def hor_can_be_placed(grid, subword, row_0, col_0, loc):
+    """Check if a horizontal word can be placed at the specified position on the grid."""
+    config = LevelConfig()
+
+    # Check the cell immediately left of the word to avoid adjacency
+    left_col = col_0 - loc - 1
+    if 0 <= left_col < config.columns:
+        if grid.get_cell(row_0, left_col) != '.':
+            return False
+
+    # Check the cell immediately right of the word to avoid adjacency
+    right_col = col_0 + (len(subword) - loc)
+    if 0 <= right_col < config.columns:
+        if grid.get_cell(row_0, right_col) != '.':
+            return False
+
+    # Check each letter position of the subword horizontally
+    for i, letter in enumerate(subword):
+        offset = i - loc  # Distance from main letter
+        col = col_0 + offset
+        row = row_0
+
+        # Verify position is within grid bounds
+        if not (0 <= row < config.rows and 0 <= col < config.columns):
+            return False
+        
+        # Allow placement if cell is empty or already contains the correct letter
+        if grid.get_cell(row, col) != '.' and grid.get_cell(row, col) != letter:
+            return False
+        
+        # For letters other than the main intersection letter,
+        # ensure adjacent cells do not conflict with existing words
+        if offset != 0:
+            for s in (-1, 0, 1):
+                # Check cells around the leftmost letter of the subword
+                if i == 0:
+                    for j in (-1, 0):
+                        if 0 <= col + j < config.columns and 0 <= row + s < config.rows:
+                            if grid.get_cell(row + s, col + j) != '.':
+                                return False
+                # Check cells around the rightmost letter of the subword
+                elif i == len(subword) - 1:
+                    for r in (0, 1):
+                        if 0 <= col + r < config.columns and 0 <= row + s < config.rows:
+                            if grid.get_cell(row + s, col + r) != '.':
+                                return False
+                # Check cells around intermediate letters of the subword
+                else:
+                    if 0 <= row + s < config.rows:
+                        if grid.get_cell(row + s, col) != '.':
+                            return False
+    return True
+
 def place_remaining_subwords_until_20(grid, subwords, game_state, vertical_count, horizontal_count):
-    """Continue placing words until we reach the target number"""
+    """Attempt to place remaining subwords until the target word count or max attempts are reached."""
     config = LevelConfig()
     
+    # Initial count includes already placed vertical and horizontal words plus initial 7 words
     count = vertical_count + horizontal_count + 7
+    
+    # Randomly start placing either vertical or horizontal words
     direction = random.choice(("vertical", "horizontal"))
     attempts = 0
     
     while count < config.max_total_words and attempts < config.max_attempts:
-        horizontal_words = [word for word, game_word in game_state.game_words.items() 
-                          if game_word.direction == "horizontal"]
-        
-        vertical_words = [word for word, game_word in game_state.game_words.items() 
-                         if game_word.direction == "vertical"]
+        # Get lists of currently placed horizontal and vertical words
+        horizontal_words = [word for word, game_word in game_state.game_words.items() if game_word.direction == "horizontal"]
+        vertical_words = [word for word, game_word in game_state.game_words.items() if game_word.direction == "vertical"]
         
         if direction == "vertical" and horizontal_words:
             word = random.choice(horizontal_words)
@@ -294,8 +319,10 @@ def place_remaining_subwords_until_20(grid, subwords, game_state, vertical_count
             word = random.choice(vertical_words)
             grid, game_state, horizontal_count = place_horizontal_subwords(word, subwords, grid, game_state, horizontal_count)
         else:
-            break 
+            # Cannot place more words in the chosen direction
+            break
 
+        # Update count and alternate direction for next attempt
         count = vertical_count + horizontal_count + 7
         direction = "horizontal" if direction == "vertical" else "vertical"
         attempts += 1
@@ -342,31 +369,44 @@ SPECIAL_POSITIONS = [(2, 7), (4, 9), (6, 11), (8, 13), (10, 15), (12, 17)]
 
 def update_hidden_grid(guess, grid, correct_guesses, correct_guess, guessed_words, points, revealed_positions, main_word_upper=None):
     """Update the hidden grid when a correct word is guessed"""
+    # Convert correct guess to uppercase if it matches main word 
     if correct_guess.upper() in correct_guesses and guess.lower() == correct_guess.lower():
         correct_guess = correct_guess.upper()
         
+    # Return early if the correct guess is not found
     if correct_guess not in correct_guesses:
         return grid, guessed_words, points, revealed_positions
 
+    # Get letter positions for the correct guess
     index = correct_guesses[correct_guess]
 
     for i, letter in enumerate(correct_guess):
         row, col = index[i]
 
+        # Skip if this position was already guessed
         if index[i] in guessed_words:
             continue
 
-        should_capitalize = (correct_guess.isupper() or 
-                             (main_word_upper and correct_guess.upper() == main_word_upper) or 
-                             (row, col) in revealed_positions or
-                             (row, col) in SPECIAL_POSITIONS)
+        # Decide if the letter should be uppercase
+        should_capitalize = (
+            correct_guess.isupper() or
+            (main_word_upper and correct_guess.upper() == main_word_upper) or
+            (row, col) in revealed_positions or
+            (row, col) in SPECIAL_POSITIONS
+        )
         
+        # Add new revealed positions to the list
         if (row, col) not in revealed_positions:
             revealed_positions.append((row, col))
         
+        # Update the grid letter with proper case
         display_letter = letter.upper() if should_capitalize else letter
         grid[row] = grid[row][:col] + [display_letter] + grid[row][col + 1:]
+
+        # Increment points for revealed letters
         points += 1
+
+        # Mark position as guessed
         guessed_words.append((row, col))
 
     return grid, guessed_words, points, revealed_positions
@@ -377,13 +417,13 @@ def update_hidden_grid(guess, grid, correct_guesses, correct_guess, guessed_word
 
 def display_menu():
     """Display the main menu"""
-    print("\n" + "─"*50)
+    print("\n" + "="*50)
     print(" " * 7 + "₊✩‧₊˚WIZARDS OF WORDERLY PALACE˚₊✩‧₊")
-    print("─"*50)
+    print("="*50)
     print("1. Play Game")
     print("2. View Leaderboard")
     print("3. Quit")
-    print("─"*50)
+    print("="*50)
 
 def get_player_name():
     """Get player name for leaderboard tracking"""
@@ -395,106 +435,97 @@ def get_player_name():
 
 def play_game(wordlist, streak_tracker, leaderboard):
     """Main game function with streak and leaderboard tracking"""
-    global main_word
+    global main_word  # Make main_word accessible globally
     
-    print("Loading word list...")
-    config = LevelConfig()
+    print("Loading word list...")  # Start level generation
+    config = LevelConfig()  # Load level config constants
     
-    # Level generation loop
+    # Generate level until valid grid is created
     while True:
-        grid = make_grid()
-        game_state = GameState(main_word="", subwords=[])
-
-        main_word, subwords = pick_valid_main_word(wordlist)
+        grid = make_grid()  # Create empty grid
+        game_state = GameState(main_word="", subwords=[])  # Initialize game state
+        
+        main_word, subwords = pick_valid_main_word(wordlist)  # Pick main and subwords
         game_state.main_word = main_word
         game_state.subwords = subwords.copy()
-        subwords_copy = subwords.copy()
-
-        random.shuffle(subwords)
-        grid, game_state = main_word_diagonal(main_word, grid, game_state)
-        grid, game_state = place_main_subwords(main_word, subwords, grid, game_state)
-
-        horizontal_words = [word for word, game_word in game_state.game_words.items() 
-                          if game_word.direction == "horizontal"]
         
-        if not horizontal_words:
+        random.shuffle(subwords)  # Shuffle subwords randomly
+        grid, game_state = main_word_diagonal(main_word, grid, game_state)  # Place main word diagonally
+        grid, game_state = place_main_subwords(main_word, subwords, grid, game_state)  # Place horizontal subwords
+        
+        horizontal_words = [w for w, gw in game_state.game_words.items() if gw.direction == "horizontal"]
+        if not horizontal_words:  # Restart if no horizontal words placed
             continue
-            
-        word1 = random.choice(horizontal_words)
-        grid, game_state, vertical_count = place_vertical_subwords(word1, subwords, grid, game_state, 0)
-
+        
+        word1 = random.choice(horizontal_words)  # Pick random horizontal word
+        grid, game_state, vertical_count = place_vertical_subwords(word1, subwords, grid, game_state, 0)  # Place vertical subwords
+        
         attempts = 0
+        # Try to place enough vertical words or reach max attempts
         while vertical_count < config.min_vertical_words and attempts < config.max_attempts//5:
-            horizontal_words = [word for word, game_word in game_state.game_words.items() 
-                              if game_word.direction == "horizontal"]
+            horizontal_words = [w for w, gw in game_state.game_words.items() if gw.direction == "horizontal"]
             if not horizontal_words:
                 break
             word1 = random.choice(horizontal_words)
             grid, game_state, vertical_count = place_vertical_subwords(word1, subwords, grid, game_state, vertical_count)
             attempts += 1
-
-        grid, game_state = place_remaining_subwords_until_20(grid, subwords, game_state, vertical_count, 0)
         
-        if len(game_state.game_words) >= 21: 
+        grid, game_state = place_remaining_subwords_until_20(grid, subwords, game_state, vertical_count, 0)  # Fill grid up to 20 words
+        
+        if len(game_state.game_words) >= 21:  # Valid level generated
             break
     
-    # Game setup
+    # Setup game variables for play
     level_grid = grid
-    all_subwords = subwords_copy
     
-    level_words = {}
-    for word, game_word in game_state.game_words.items():
-        level_words[word] = [(pos.row, pos.col) for pos in game_word.positions]
+    level_words = {word: [(pos.row, pos.col) for pos in gw.positions] for word, gw in game_state.game_words.items()}
     
-    # Gameplay setup
-    shuffle_six_letter_word = shuffle_main(main_word)
-    upper_spacing_six_letter_word = upper_spacing(shuffle_six_letter_word)
-
-    correct_guesses = level_words.copy()  # Keep original for checking
-    hide_the_letters_grid = hide_letters(level_grid)
-
+    shuffle_six_letter_word = shuffle_main(main_word)  # Shuffle main word letters
+    upper_spacing_six_letter_word = upper_spacing(shuffle_six_letter_word)  # Format letters for display
+    
+    correct_guesses = level_words.copy()  # Words player must guess
+    hide_the_letters_grid = hide_letters(level_grid)  # Hide letters in grid
+    
     lives = 5
     points = 0
     guessed_words = []
     last_guessed_word = "None"
     revealed_positions = []
-    found_words = set()  # Track already found words
-
-    clear_screen()
-
-    # Game loop
+    found_words = set()  # Track found words
+    
+    clear_screen()  # Clear terminal before game starts
+    
+    # Main gameplay loop
     while lives > 0:
-        # Display streak info
+        # Display player streak if available
         if streak_tracker.player_name:
-            print(f"{"─"*49}\nPlayer: {streak_tracker.player_name}")
-            print(f"Current Streak: {streak_tracker.current_streak}{" "*15}Streak Points: {streak_tracker.current_points}\n{"─"*49}")
+            print(f"{'='*49}\nPlayer: {streak_tracker.player_name}")
+            print(f"Current Streak: {streak_tracker.current_streak}{" "*15}Streak Points: {streak_tracker.current_points}\n{'='*49}")
 
-        display_grid(hide_the_letters_grid)
-        print(f"{"─"*49}\nLetters: {upper_spacing_six_letter_word}    |    Last guess: {last_guessed_word}")
-        print(f"Lives left: {lives} | Points: {points} | Words found: {len(found_words)}/{len(correct_guesses)}\n{"─"*49}")
-        print(f"{" "*10}Letter Commands | 'R' to start new game \n{" "*26}| 'L' for leaderboard\n{" "*26}| 'E' to quit \n{"─"*49}")
+        display_grid(hide_the_letters_grid)  # Show grid to player
+        print(f"{'='*49}\nLetters: {upper_spacing_six_letter_word}    |    Last guess: {last_guessed_word}")
+        print(f"Lives left: {lives} | Points: {points} | Words found: {len(found_words)}/{len(correct_guesses)}\n{'='*49}")
+        print(f"{" "*10}Letter Commands | 'R' to start new game \n{" "*26}| 'L' for leaderboard\n{" "*26}| 'E' to quit \n{'='*49}")
 
         print("\nSubwords placed in the grid:")
         print(", ".join(sorted(game_state.game_words.keys())))
-
-        # Win condition - check if all words are found
+        
+        # Check win condition (all words found)
         if len(found_words) == len(correct_guesses):
             print("Congratulations! You've revealed all words!")
+            streak_tracker.add_win(points)  # Update streak points
             
-            # Update streak
-            streak_tracker.add_win(points)
-            
-            # Check for new record
+            # Notify new record if applicable
             if streak_tracker.is_new_record(leaderboard):
-                print(f"🎉 NEW PERSONAL RECORD! 🎉")
+                print("🎉 NEW PERSONAL RECORD! 🎉")
                 print(f"Streak: {streak_tracker.current_streak} games")
                 print(f"Total Points: {streak_tracker.current_points}")
             
             choice = input("Continue playing to extend your streak? (y/n): ").strip().lower()
             if choice == 'y':
-                return "R"  # Continue streak
+                return "R"  # Restart game, keep streak
             else:
-                # Save to leaderboard and end streak
+                # Save streak and reset
                 if streak_tracker.player_name and streak_tracker.current_streak > 0:
                     leaderboard.add_entry(
                         streak_tracker.player_name,
@@ -502,14 +533,13 @@ def play_game(wordlist, streak_tracker, leaderboard):
                         streak_tracker.current_points
                     )
                     print(f"Your streak of {streak_tracker.current_streak} games has been saved to the leaderboard!")
-                
                 streak_tracker.reset_streak()
                 return "M"  # Return to menu
         
         guess = input("Enter guess: ").strip().lower()
         
-        if guess.upper() == "R":
-            # End current streak and start new game
+        # Handle special commands
+        if guess.upper() == "R":  # Restart game
             if streak_tracker.player_name and streak_tracker.current_streak > 0:
                 leaderboard.add_entry(
                     streak_tracker.player_name,
@@ -519,8 +549,7 @@ def play_game(wordlist, streak_tracker, leaderboard):
                 print(f"Your streak of {streak_tracker.current_streak} games has been saved!")
             streak_tracker.reset_streak()
             return "R"
-        elif guess.upper() == "E":
-            # Save streak before quitting
+        elif guess.upper() == "E":  # Exit game
             if streak_tracker.player_name and streak_tracker.current_streak > 0:
                 leaderboard.add_entry(
                     streak_tracker.player_name,
@@ -529,7 +558,7 @@ def play_game(wordlist, streak_tracker, leaderboard):
                 )
                 print(f"Your streak of {streak_tracker.current_streak} games has been saved!")
             return "E"
-        elif guess.upper() == "L":
+        elif guess.upper() == "L":  # Show leaderboard
             clear_screen()
             leaderboard.display_leaderboard()
             input("Press Enter to continue...")
@@ -538,24 +567,19 @@ def play_game(wordlist, streak_tracker, leaderboard):
         
         clear_screen()
         
-        # Process guess - Check if word was already found
-        word_found = False
-        
-        # Check main word
+        # Check if main word guessed
         if guess == main_word.lower():
             if main_word.upper() in found_words:
-                # Already found, deduct life
-                lives -= 1
+                lives -= 1  # Already found, lose life
                 last_guessed_word = f"{guess} (already found)"
             else:
-                # New find
+                # Reveal main word letters
                 hide_the_letters_grid, guessed_words, points, revealed_positions = update_hidden_grid(
                     guess, hide_the_letters_grid, correct_guesses, main_word.upper(), 
                     guessed_words, points, revealed_positions, main_word.upper()
                 )
                 found_words.add(main_word.upper())
                 last_guessed_word = guess
-                word_found = True
         else:
             # Check other words
             matching_word = None
@@ -566,23 +590,20 @@ def play_game(wordlist, streak_tracker, leaderboard):
             
             if matching_word:
                 if matching_word in found_words:
-                    # Already found, deduct life
-                    lives -= 1
+                    lives -= 1  # Already found, lose life
                     last_guessed_word = f"{guess} (already found)"
                 else:
-                    # New find
+                    # Reveal guessed word letters
                     hide_the_letters_grid, guessed_words, points, revealed_positions = update_hidden_grid(
                         guess, hide_the_letters_grid, correct_guesses, matching_word, 
                         guessed_words, points, revealed_positions, main_word.upper()
                     )
                     found_words.add(matching_word)
                     last_guessed_word = guess
-                    word_found = True
             else:
-                # Word not in the puzzle
-                lives -= 1
+                lives -= 1  # Incorrect guess, lose life
                 last_guessed_word = f"{guess} (not found)"
-            
+        
         # Check lose condition
         if lives == 0:
             display_grid(hide_the_letters_grid)
@@ -592,7 +613,7 @@ def play_game(wordlist, streak_tracker, leaderboard):
             print("Game over! You ran out of lives.")
             print(f"You found {len(found_words)}/{len(correct_guesses)} words.")
             
-            # Save streak to leaderboard even on loss (if there was a streak)
+            # Save streak on loss
             if streak_tracker.player_name and streak_tracker.current_streak > 0:
                 leaderboard.add_entry(
                     streak_tracker.player_name,
@@ -601,18 +622,16 @@ def play_game(wordlist, streak_tracker, leaderboard):
                 )
                 print(f"Your streak of {streak_tracker.current_streak} games has been saved!")
             
-            # Always save current game score to leaderboard (even single games)
+            # Save current game's score separately
             if streak_tracker.player_name:
-                # Save current game as a 1-game streak
                 leaderboard.add_entry(
                     streak_tracker.player_name,
-                    1,  # Single game
-                    points  # Just this game's points
+                    0,  # Single game streak
+                    points
                 )
                 print(f"Your game score of {points} points has been saved to the leaderboard!")
             
             streak_tracker.reset_streak()
-            
             choice = input("Play again? (y/n): ").strip().lower()
             return "R" if choice == 'y' else "M"
 
@@ -620,28 +639,33 @@ def play_game(wordlist, streak_tracker, leaderboard):
 
 def main():
     """Main function with menu system"""
-    stage_file = 'corncob-lowercase.txt'
+    stage_file = 'corncob-lowercase.txt'  # Default word list file
     
     try:
+        # Attempt to parse optional command line argument for a custom stage file
         parser = ArgumentParser()
         parser.add_argument('stage_file', nargs='?', default=stage_file)
         args = parser.parse_args()
         stage_file = args.stage_file
-    except:
+    except SystemExit:
+        # If parsing fails, continue with default file
         pass
     
     try:
+        # Load the word list from the specified file
         with open(stage_file, encoding='utf-8') as f:
             wordlist = f.readlines()
     except FileNotFoundError:
+        # Handle missing file error gracefully
         print(f"Error: Could not find the word list file '{stage_file}'")
         print("Make sure the file is in the same directory as this script.")
         return
 
-    # Initialize leaderboard and streak tracker
+    # Initialize leaderboard and streak tracker for game progress tracking
     leaderboard = Leaderboard()
     streak_tracker = StreakTracker()
 
+    # Main menu loop
     while True:
         clear_screen()
         display_menu()
@@ -649,10 +673,10 @@ def main():
         choice = input("Enter your choice (1-3): ").strip()
         
         if choice == "1":
-            # Start playing
+            # Start playing the game
             if not streak_tracker.player_name:
                 clear_screen()
-                print(f"{"─"*49}\n ₊✩‧₊˚Welcome to Wizards of Worderly Palace!\n{"─"*49}")
+                print(f"{'='*49}\n ₊✩‧₊˚Welcome to Wizards of Worderly Palace!\n{'='*49}")
                 streak_tracker.player_name = get_player_name()
                 print(f"Hello {streak_tracker.player_name}!")
                 input("Press Enter to start...")
@@ -662,19 +686,21 @@ def main():
                 action = play_game(wordlist, streak_tracker, leaderboard)
             
             if action == "E":
+                # Exit game loop to quit
                 break
                 
         elif choice == "2":
-            # View leaderboard
+            # Show the leaderboard
             clear_screen()
             leaderboard.display_leaderboard()
             input("Press Enter to return to menu...")
             
         elif choice == "3":
-            # Quit
+            # Quit the game
             print("Thanks for playing!")
             break
         else:
+            # Handle invalid menu input
             print("Invalid choice. Please enter 1, 2, or 3.")
             input("Press Enter to continue...")
 

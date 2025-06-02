@@ -195,24 +195,24 @@ class Leaderboard:
     
     def display_leaderboard(self, limit: int = 10) -> None:
         """Display the leaderboard in a formatted way"""
-        print("\n" + "─"*60)
+        print("\n" + "="*60)
         print(" " * 18 + "₊✩‧₊˚LEADERBOARD˚₊✩‧₊")
-        print("─"*60)
+        print("="*60)
         
         if not self.entries:
             print("No entries yet. Be the first to set a record!")
-            print("─"*60)
+            print("="*60)
             return
         
         print(f"{'Rank':<6}{'Name':<15}{'Streak':<8}{'Points':<8}{'Date':<15}")
-        print("─" * 60)
+        print("=" * 60)
         
         top_entries = self.get_top_entries(limit)
         for i, entry in enumerate(top_entries, 1):
             date_str = entry.timestamp.split()[0] if entry.timestamp else "Unknown"
             print(f"{i:<6}{entry.player_name[:14]:<15}{entry.streak_length:<8}{entry.total_points:<8}{date_str:<15}")
         
-        print("─"*60)
+        print("="*60)
     
     def get_personal_best(self, player_name: str):
         """Get the best entry for a specific player"""
