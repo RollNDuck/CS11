@@ -503,8 +503,8 @@ def play_game(wordlist, streak_tracker, leaderboard):
             print(f"Current Streak: {streak_tracker.current_streak}{' '*15}Streak Points: {streak_tracker.current_points}\n{'='*49}")
 
         display_grid(hide_the_letters_grid)  # Show grid to player
-        print(f"{'='*49}\nLetters: {upper_spacing_six_letter_word}\nLast guess: {last_guessed_word}")
-        print(f"Lives left: {lives} | Points: {points} | Words found: {len(found_words)}/{len(correct_guesses)}\n{'='*49}")
+        print(f"{'='*49}\nLives left: {lives} | Points: {points} | Words found: {len(found_words)}/{len(correct_guesses)}")
+        print(f"Letters: {upper_spacing_six_letter_word}\nLast guess: {last_guessed_word}\n{'='*49}")
         print(f"{' '*10}Letter Commands | 'R' to start new game \n{' '*26}| 'L' for leaderboard\n{' '*26}| 'E' to quit \n{'='*49}")
 
         # Cheatsheet
